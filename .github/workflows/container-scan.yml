@@ -63,9 +63,10 @@ jobs:
           path: sbom.spdx.json
 
       - name: Grype — enforce severity gate
-        uses: anchore/scan-action@v5
+        uses: anchore/scan-action@v7
         with:
-          image: ${{ inputs.image-ref }}
+          # image/path/sbom are mutually exclusive — scan the SBOM Syft just
+          # built rather than re-deriving it from the image a second time.
           sbom: sbom.spdx.json
           fail-build: true
           severity-cutoff: ${{ inputs.fail-on-severity }}
