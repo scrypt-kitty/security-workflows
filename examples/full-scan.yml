@@ -1,0 +1,39 @@
+# Copy this into a consuming repo as .github/workflows/security.yml, then
+# delete whichever jobs don't apply (e.g. drop `container` if the repo
+# doesn't build an image, drop `sast` for a repo with no application code).
+name: Security scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  deps:
+    uses: scrypt-kitty/security-workflows/.github/workflows/dependency-scan.yml@main
+    with:
+      fail-on-severity: HIGH
+
+  secrets:
+    uses: scrypt-kitty/security-workflows/.github/workflows/secret-scan.yml@main
+
+  sast:
+    uses: scrypt-kitty/security-workflows/.github/workflows/sast-scan.yml@main
+    secrets:
+      SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+  # Only include this one if the repo builds a container image.
+  # build:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - run: docker build -t myimage:ci .
+  #     - run: docker save myimage:ci -o image.tar
+  #     - uses: actions/upload-artifact@v4
+  #       with: { name: image, path: image.tar }
+  # container:
+  #   needs: build
+  #   uses: scrypt-kitty/security-workflows/.github/workflows/container-scan.yml@main
+  #   with:
+  #     artifact-name: image
+  #     image-ref: myimage:ci

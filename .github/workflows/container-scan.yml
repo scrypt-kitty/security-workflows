@@ -1,0 +1,71 @@
+name: Container & SBOM scan (Grype + Syft)
+
+# Reusable workflow. Scans a built image (or a Dockerfile/context) for known
+# vulnerabilities with Grype, and generates an SBOM with Syft so you have a
+# record of what's actually in the image independent of any one scanner's
+# database.
+#
+# Call it from another repo, after you've built or pulled the image:
+#
+#   jobs:
+#     build:
+#       runs-on: ubuntu-latest
+#       steps:
+#         - uses: actions/checkout@v4
+#         - run: docker build -t myimage:ci .
+#         - run: docker save myimage:ci -o image.tar
+#         - uses: actions/upload-artifact@v4
+#           with: { name: image, path: image.tar }
+#     container:
+#       needs: build
+#       uses: scrypt-kitty/security-workflows/.github/workflows/container-scan.yml@main
+#       with:
+#         artifact-name: image
+#         image-ref: myimage:ci
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: Name of the uploaded artifact holding the `docker save` tarball.
+        type: string
+        required: true
+      image-ref:
+        description: Reference the image was saved under (must match the tag inside the tarball).
+        type: string
+        required: true
+      fail-on-severity:
+        description: Minimum severity that fails the job (critical, high, medium, low, negligible, or unknown to never fail).
+        type: string
+        default: "high"
+
+jobs:
+  scan:
+    name: grype + syft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+
+      - name: Load image
+        run: docker load -i image.tar
+
+      - name: Syft — generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ inputs.image-ref }}
+          output-file: sbom.spdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+
+      - name: Grype — enforce severity gate
+        uses: anchore/scan-action@v5
+        with:
+          image: ${{ inputs.image-ref }}
+          sbom: sbom.spdx.json
+          fail-build: true
+          severity-cutoff: ${{ inputs.fail-on-severity }}
