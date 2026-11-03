@@ -1,0 +1,94 @@
+name: Dependency scan (Trivy + osv-scanner)
+
+# Reusable workflow. Finds known vulnerabilities in dependency manifests and
+# lockfiles (npm, pip, Cargo, Go, etc.) using two free, open-source scanners
+# with different vulnerability feeds, so one tool's blind spot doesn't become
+# the only answer.
+#
+# Call it from another repo:
+#
+#   jobs:
+#     deps:
+#       uses: scrypt-kitty/security-workflows/.github/workflows/dependency-scan.yml@main
+#       with:
+#         fail-on-severity: HIGH
+#
+# Private repos: upload-sarif requires a GitHub Advanced Security license to
+# actually show in the Security tab. It is OFF by default here; findings
+# still fail the job and show in the step summary without it.
+
+on:
+  workflow_call:
+    inputs:
+      path:
+        description: Directory to scan.
+        type: string
+        default: "."
+      fail-on-severity:
+        description: Minimum severity that fails the job (CRITICAL, HIGH, MEDIUM, LOW, or UNKNOWN to never fail).
+        type: string
+        default: "HIGH"
+      upload-sarif:
+        description: Upload SARIF to the Security tab. Only works on public repos, or private repos with GitHub Advanced Security.
+        type: boolean
+        default: false
+
+jobs:
+  trivy:
+    name: trivy (filesystem)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy — human-readable summary
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ inputs.path }}
+          format: table
+          severity: CRITICAL,HIGH,MEDIUM
+          exit-code: "0"
+
+      - name: Trivy — SARIF
+        if: inputs.upload-sarif
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ inputs.path }}
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: "0"
+
+      - name: Upload SARIF
+        if: inputs.upload-sarif
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true # no-op without GHAS on a private repo; don't fail the run over it
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Trivy — enforce severity gate
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ inputs.path }}
+          format: table
+          severity: ${{ inputs.fail-on-severity }}
+          exit-code: "1"
+          ignore-unfixed: true
+
+  osv-scanner:
+    name: osv-scanner
+    # osv-scanner ships only as a job-level reusable workflow, not a step-level
+    # action — there is no "uses: .../osv-scanner-action@v1" step to call.
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.0
+    with:
+      scan-args: |-
+        --recursive
+        ${{ inputs.path }}

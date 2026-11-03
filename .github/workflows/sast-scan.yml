@@ -1,0 +1,36 @@
+name: SAST scan (Semgrep)
+
+# Reusable workflow. CodeQL's free tier is public-repo-only; Semgrep's
+# Community rules run static analysis on private repos for free too, which
+# is the actual gap this fills.
+#
+# Call it from another repo:
+#
+#   jobs:
+#     sast:
+#       uses: scrypt-kitty/security-workflows/.github/workflows/sast-scan.yml@main
+#     secrets:
+#       SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}  # optional, only for their dashboard
+
+on:
+  workflow_call:
+    secrets:
+      SEMGREP_APP_TOKEN:
+        description: Optional. Only needed to publish results to semgrep.dev's dashboard; the scan itself runs without it.
+        required: false
+
+jobs:
+  semgrep:
+    name: semgrep
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: semgrep ci
+        run: semgrep ci --config auto
+        env:
+          # Set only if the caller passed one; semgrep ci runs locally and
+          # fails on findings either way without it.
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
